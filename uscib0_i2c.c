@@ -7,6 +7,8 @@
  *      Author: lmajer
  */
 
+
+
 unsigned char rxbytecounter, txbytecounter;         // RX/TX byte counter
 unsigned char *rxptr;                               // RX pointer
 unsigned char *txptr;                               // TX pointer

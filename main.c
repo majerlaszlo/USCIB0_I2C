@@ -6,6 +6,8 @@
  */
 int main(void) {
     WDTCTL = WDTPW | WDTHOLD;	// Stop watchdog timer
+    P1SEL |= BIT6 + BIT7;                     // Assign I2C pins to USCI_B0
+    P1SEL2|= BIT6 + BIT7;                     // Assign I2C pins to USCI_B0
 	
     init_i2c_transmit(0x68);
 
