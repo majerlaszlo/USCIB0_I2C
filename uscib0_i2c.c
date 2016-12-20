@@ -7,7 +7,7 @@
  *      Author: lmajer
  */
 
-
+unsigned char test;
 
 unsigned char rxbytecounter, txbytecounter;         // RX/TX byte counter
 unsigned char *rxptr;                               // RX pointer
@@ -41,7 +41,7 @@ void init_i2c_receive(unsigned char address)
     UCB0CTL1 = UCSSEL_2 + UCSWRST;                  // Use SMCLK, keep SW reset
     UCB0BR0 = 12;                                   // fSCL = SMCLK/12 = ~100kHz
     UCB0BR1 = 0;
-    UCB0I2CSA = 0x48;                               // Slave Address is input parameter
+    UCB0I2CSA = address;                               // Slave Address is input parameter
     UCB0CTL1 &= ~UCSWRST;                           // Clear SW reset, resume operation
     IE2 |= UCB0RXIE;                                // Enable RX interrupt
 }
@@ -54,18 +54,22 @@ void i2c_transmit(unsigned char txcnt, unsigned char *txbytes, unsigned char rep
     while (UCB0CTL1 & UCTXSTP);                     // Ensure stop condition got sent
     UCB0CTL1 |= UCTR + UCTXSTT;                     // I2C TX, start condition
     __bis_SR_register(CPUOFF + GIE);                // Enter LPM0 w/ interrupts
-
 }
 
 void i2c_receive(unsigned char rxcnt, unsigned char *rxbytes)
 {
-    rxptr   =   rxbytes;                            // Load RX pointer
-    rxbytecounter   =   rxcnt   -   1;              // Load RX byte counter
-    while (UCB0CTL1 & UCTXSTP);                     // Ensure stop condition got sent
-    UCB0CTL1 |= UCTXSTT;                            // I2C start condition
-    __bis_SR_register(CPUOFF + GIE);                // Enter LPM0 w/ interrupts
-}
+    rxbytecounter   =   rxcnt;
+    rxptr   =   rxbytes;
 
+    while (UCB0CTL1 & UCTXSTP);             // Ensure stop condition got sent
+    UCB0CTL1 |= UCTXSTT;                    // I2C start condition
+    if(rxbytecounter == 1)
+    {
+        while (UCB0CTL1 & UCTXSTT);         // Start condition sent?
+        UCB0CTL1 |= UCTXSTP;                // Generate I2C stop condition
+    }
+    __bis_SR_register(CPUOFF + GIE);        // Enter LPM0 w/ interrupts
+}
 
 
 
@@ -79,51 +83,35 @@ void __attribute__ ((interrupt(USCIAB0TX_VECTOR))) USCIAB0TX_ISR (void)
 #error Compiler not supported!
 #endif
 {
-    if(RX_flag == 1)                                // Master Recieve?
+    if(RX_flag)                                         // Master Receiver mode?
     {
-        rxbytecounter--;                            // Decrement RX byte counter
-            if (rxbytecounter)
-            {
-                *rxptr++ = UCB0RXBUF;               // Move RX data to address PRxData
-            }
-            else
-            {
-                if(RPT_flag == 0)
-                {
-                    UCB0CTL1 |= UCTXSTP;            // No Repeated Start: stop condition
-                }
-
-                if(RPT_flag == 1)                   // if Repeated Start: do nothing
-                    {
-                        RPT_flag = 0;
-                    }
-                *rxptr = UCB0RXBUF;                 // Move final RX data to PRxData
-                __bic_SR_register_on_exit(CPUOFF);  // Exit LPM0
-            }
-    }
-
-    else                                            // Master Transmit
-    {
-        if (txbytecounter)                          // Check TX byte counter
+        rxbytecounter--;                                // Decrement rx counter
+        if(rxbytecounter)                               // Rx counter 0?
         {
-            UCB0TXBUF     =  txptr++;                // Load TX buffer
-                    txbytecounter--;                // Decrement TX byte counter
+            *rxptr    =   UCB0RXBUF;                    // Read RX Buffer
+            rxptr++;                                    // Increment Pointer
+            if(rxbytecounter    ==  1)                  // 1 character left?
+                UCB0CTL1    |=  UCTXSTP;                // Generate i2c Stop
+        }
+        else                                            // RX Counter = 0
+        {
+            *rxptr    =   UCB0RXBUF;                    // Read the last character
+            __bic_SR_register_on_exit(CPUOFF);          // Exit LMP0 (wake up CPU) Disable interrupts
+        }
+    }
+    else                                                // Master Transmitter Mode
+    {
+        if(txbytecounter)
+        {
+            UCB0TXBUF   =   *txptr;              // Transmit pointer
+            txptr++;                                    // Increment TX Pointer
+            txbytecounter--;                            // Decrement TX Byte counter
         }
         else
         {
-            if(RPT_flag == 1)
-            {
-                RPT_flag = 0;
-//                PTxData = &MSData;                // TX array start address
-//                txbytecounter = NUM_BYTES_TX;     // Load TX byte counter
-                __bic_SR_register_on_exit(CPUOFF);
-            }
-            else
-            {
-                UCB0CTL1 |= UCTXSTP;                    // I2C stop condition
-                IFG2 &= ~UCB0TXIFG;                     // Clear USCI_B0 TX int flag
-                __bic_SR_register_on_exit(CPUOFF);      // Exit LPM0
-            }
+            UCB0CTL1    |=  UCTXSTP;                // Generate i2c Stop
+            IFG2 &= ~UCB0TXIFG;                     // Clear USCI_B0 TX int flag
+            __bic_SR_register_on_exit(CPUOFF);      // Exit LPM0
         }
     }
 }
